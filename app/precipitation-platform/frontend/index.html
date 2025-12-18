@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>降水预测平台 - 基于超图神经网络的雷达回波外推</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <!-- 头部 -->
+    <header class="header">
+        <div class="container">
+            <div class="logo">
+                <h1>🌧️ 降水预测平台</h1>
+                <p>基于超图神经网络的雷达回波外推研究</p>
+            </div>
+            <nav class="nav">
+                <a href="#upload">数据上传</a>
+                <a href="#result">预测结果</a>
+                <a href="#about">关于项目</a>
+            </nav>
+        </div>
+    </header>
+
+    <!-- 主内容 -->
+    <main class="main">
+        <div class="container">
+            <!-- 上传区域 -->
+            <section id="upload" class="section upload-section">
+                <h2>数据上传</h2>
+                <div class="upload-card">
+                    <div class="upload-area" id="uploadArea">
+                        <div class="upload-icon">📁</div>
+                        <p class="upload-text">点击或拖拽NPY文件到此处</p>
+                        <p class="upload-hint">支持多个文件上传，每个文件最大100MB</p>
+                        <input type="file" id="fileInput" accept=".npy" multiple hidden>
+                    </div>
+                    
+                    <div class="file-list" id="fileList"></div>
+                    
+                    <div class="params-config">
+                        <h3>参数配置</h3>
+                        <div class="param-group">
+                            <label for="inputLength">输入帧数量:</label>
+                            <input type="number" id="inputLength" min="1" max="20" value="5">
+                        </div>
+                        <div class="param-group">
+                            <label for="predictLength">预测帧数量:</label>
+                            <input type="number" id="predictLength" min="1" max="20" value="5">
+                        </div>
+                        <div class="param-group">
+                            <label>
+                                <input type="checkbox" id="generateComparison" checked>
+                                生成对比图
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <button class="btn btn-primary" id="predictBtn" disabled>
+                        <span id="btnText">开始预测</span>
+                    </button>
+                </div>
+            </section>
+
+            <!-- 进度显示 -->
+            <section class="section progress-section" id="progressSection" style="display: none;">
+                <div class="progress-card">
+                    <h3>预测进行中...</h3>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progressFill"></div>
+                    </div>
+                    <p class="progress-text" id="progressText">正在处理数据...</p>
+                </div>
+            </section>
+
+            <!-- 结果展示 -->
+            <section id="result" class="section result-section" style="display: none;">
+                <h2>预测结果</h2>
+                <div class="result-card">
+                    <div class="result-info">
+                        <div class="info-item">
+                            <span class="label">任务ID:</span>
+                            <span class="value" id="taskId">-</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="label">处理时间:</span>
+                            <span class="value" id="processingTime">-</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="label">MSE指标:</span>
+                            <span class="value" id="mseValue">-</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="label">SSIM指标:</span>
+                            <span class="value" id="ssimValue">-</span>
+                        </div>
+                    </div>
+                    
+                    <div class="result-images">
+                        <h3>输入图像</h3>
+                        <div class="image-grid" id="inputImages"></div>
+                        
+                        <h3>预测结果</h3>
+                        <div class="image-grid" id="predictionImages"></div>
+                        
+                        <div id="comparisonContainer" style="display: none;">
+                            <h3>对比图</h3>
+                            <img id="comparisonImage" class="comparison-image" alt="对比图">
+                        </div>
+                    </div>
+                    
+                    <div class="result-actions">
+                        <button class="btn btn-secondary" id="downloadBtn">
+                            📥 下载完整结果
+                        </button>
+                        <button class="btn btn-secondary" id="newPredictBtn">
+                            🔄 新建预测
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 关于项目 -->
+            <section id="about" class="section about-section">
+                <h2>关于项目</h2>
+                <div class="about-card">
+                    <h3>项目简介</h3>
+                    <p>本项目基于超图神经网络理论，针对降水临近预报任务，设计了双层超图架构的深度学习模型。通过将空间卷积操作重新解释为超图卷积，并引入独立的时间超图记忆状态，实现了空间特征与时间依赖的有效解耦。</p>
+                    
+                    <h3>核心创新</h3>
+                    <ul>
+                        <li><strong>双层超图架构:</strong> 设计空间超图状态c_t和时间超图状态m_t，分别建模空间相关性和时间演变规律</li>
+                        <li><strong>超图解耦机制:</strong> 通过余弦相似度最小化确保两层超图学习不同特征</li>
+                        <li><strong>卷积-超图等价性:</strong> 理论证明规则网格上卷积与超图卷积的数学等价性</li>
+                        <li><strong>智能数据处理:</strong> 全局归一化、数据增强、数值稳定性保障</li>
+                    </ul>
+                    
+                    <h3>技术栈</h3>
+                    <div class="tech-stack">
+                        <span class="tech-tag">Java Spring Boot</span>
+                        <span class="tech-tag">HTML5/CSS3/JavaScript</span>
+                        <span class="tech-tag">Python Flask</span>
+                        <span class="tech-tag">PyTorch</span>
+                        <span class="tech-tag">RESTful API</span>
+                    </div>
+                    
+                    <h3>团队成员</h3>
+                    <p>刘禹伟、钱胜波、曹丽君、赵雨薇</p>
+                    <p>指导教师：霍光煜</p>
+                    <p>北京林业大学信息学院</p>
+                </div>
+            </section>
+        </div>
+    </main>
+
+    <!-- 页脚 -->
+    <footer class="footer">
+        <div class="container">
+            <p>&copy; 2025 北京林业大学 - 降水预测平台 | 大学生创新创业训练项目</p>
+        </div>
+    </footer>
+
+    <script src="js/main.js"></script>
+</body>
+</html>
+
