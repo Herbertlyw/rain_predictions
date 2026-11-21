@@ -1,9 +1,9 @@
 // API基础URL
-const API_BASE_URL = 'http://localhost:8080/api';
+const API_BASE_URL = location.pathname.startsWith('/api') ? '/api' : 'http://localhost:8080/api';
 
 // 全局变量
 let selectedFiles = [];
-let currentTaskId = null;
+let currentDownloadUrl = null;
 
 // DOM元素
 const uploadArea = document.getElementById('uploadArea');
@@ -108,12 +108,13 @@ function updateFileList() {
             <div class="file-info">
                 <span class="file-icon">📄</span>
                 <div>
-                    <div class="file-name">${file.name}</div>
+                    <div class="file-name"></div>
                     <div class="file-size">${formatFileSize(file.size)}</div>
                 </div>
             </div>
             <button class="file-remove" onclick="removeFile(${index})">移除</button>
         `;
+        fileItem.querySelector(".file-name").textContent = file.name;
         fileList.appendChild(fileItem);
     });
 }
@@ -185,7 +186,8 @@ async function handlePredict() {
         });
         
         if (!response.ok) {
-            throw new Error(`HTTP错误: ${response.status}`);
+            const error = await response.json().catch(() => ({}));
+            throw new Error(error.message || `请求失败 (HTTP ${response.status})`);
         }
         
         updateProgress(40, '文件上传完成，开始预测...');
@@ -243,16 +245,12 @@ function hideProgress() {
  * 显示结果
  */
 function displayResult(data) {
-    currentTaskId = data.taskId;
+    currentDownloadUrl = data.downloadUrl;
     
     // 更新基本信息
     document.getElementById('taskId').textContent = data.taskId || '-';
     document.getElementById('processingTime').textContent = 
         data.processingTime ? `${data.processingTime.toFixed(2)}秒` : '-';
-    document.getElementById('mseValue').textContent = 
-        data.mse ? data.mse.toFixed(6) : '-';
-    document.getElementById('ssimValue').textContent = 
-        data.ssim ? data.ssim.toFixed(4) : '-';
     
     // 显示输入图像
     const inputImagesContainer = document.getElementById('inputImages');
@@ -304,8 +302,8 @@ function displayResult(data) {
  * 下载结果
  */
 function handleDownload() {
-    if (currentTaskId) {
-        const downloadUrl = `${API_BASE_URL}/download/${currentTaskId}`;
+    if (currentDownloadUrl) {
+        const downloadUrl = currentDownloadUrl;
         window.open(downloadUrl, '_blank');
     } else {
         showToast('没有可下载的结果', 'error');
@@ -317,7 +315,7 @@ function handleDownload() {
  */
 function resetForm() {
     selectedFiles = [];
-    currentTaskId = null;
+    currentDownloadUrl = null;
     fileInput.value = '';
     updateFileList();
     updatePredictButton();
