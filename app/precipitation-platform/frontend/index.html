@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>降水预测平台 - 基于超图神经网络的雷达回波外推</title>
+    <title>降水预测平台 - 基于 ConvLSTM 的雷达回波外推</title>
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -12,7 +12,7 @@
         <div class="container">
             <div class="logo">
                 <h1>🌧️ 降水预测平台</h1>
-                <p>基于超图神经网络的雷达回波外推研究</p>
+                <p>基于 ConvLSTM 的雷达回波外推研究</p>
             </div>
             <nav class="nav">
                 <a href="#upload">数据上传</a>
@@ -86,14 +86,6 @@
                             <span class="label">处理时间:</span>
                             <span class="value" id="processingTime">-</span>
                         </div>
-                        <div class="info-item">
-                            <span class="label">MSE指标:</span>
-                            <span class="value" id="mseValue">-</span>
-                        </div>
-                        <div class="info-item">
-                            <span class="label">SSIM指标:</span>
-                            <span class="value" id="ssimValue">-</span>
-                        </div>
                     </div>
                     
                     <div class="result-images">
@@ -125,16 +117,7 @@
                 <h2>关于项目</h2>
                 <div class="about-card">
                     <h3>项目简介</h3>
-                    <p>本项目基于超图神经网络理论，针对降水临近预报任务，设计了双层超图架构的深度学习模型。通过将空间卷积操作重新解释为超图卷积，并引入独立的时间超图记忆状态，实现了空间特征与时间依赖的有效解耦。</p>
-                    
-                    <h3>核心创新</h3>
-                    <ul>
-                        <li><strong>双层超图架构:</strong> 设计空间超图状态c_t和时间超图状态m_t，分别建模空间相关性和时间演变规律</li>
-                        <li><strong>超图解耦机制:</strong> 通过余弦相似度最小化确保两层超图学习不同特征</li>
-                        <li><strong>卷积-超图等价性:</strong> 理论证明规则网格上卷积与超图卷积的数学等价性</li>
-                        <li><strong>智能数据处理:</strong> 全局归一化、数据增强、数值稳定性保障</li>
-                    </ul>
-                    
+                    <p>将同一区域按时间排列的雷达网格交给两层 ConvLSTM。模型读完最后一帧，再逐帧外推。结果可下载为 NPY 数组和对比图。</p>
                     <h3>技术栈</h3>
                     <div class="tech-stack">
                         <span class="tech-tag">Java Spring Boot</span>

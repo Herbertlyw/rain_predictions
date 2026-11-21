@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>雷达图像预测系统</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #4361ee;
+            --secondary-color: #3f37c9;
+            --accent-color: #4895ef;
+            --success-color: #4cc9f0;
+            --danger-color: #f72585;
+            --light-color: #f8f9fa;
+            --dark-color: #212529;
+            --gray-color: #6c757d;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Noto Sans SC', 'WenQuanYi Micro Hei', sans-serif;
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            min-height: 100vh;
+            color: var(--dark-color);
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            padding: 40px 0;
+            background: linear-gradient(135deg, rgba(67, 97, 238, 0.8) 0%, rgba(63, 55, 201, 0.8) 100%);
+            color: white;
+            border-radius: 15px;
+            margin-bottom: 30px;
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+        }
+
+        .header h1 {
+            font-size: 2.8rem;
+            margin-bottom: 15px;
+            font-weight: 500;
+        }
+
+        .header p {
+            font-size: 1.2rem;
+            opacity: 0.9;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .card {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+            padding: 30px;
+            margin-bottom: 30px;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 15px 30px rgba(0, 0, 0, 0.15);
+        }
+
+        .card-title {
+            font-size: 1.5rem;
+            margin-bottom: 20px;
+            color: var(--primary-color);
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+        }
+
+        .card-title i {
+            margin-right: 10px;
+            font-size: 1.8rem;
+        }
+
+        .upload-area {
+            border: 3px dashed var(--accent-color);
+            border-radius: 12px;
+            padding: 40px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: rgba(72, 149, 239, 0.05);
+            margin-bottom: 20px;
+        }
+
+        .upload-area:hover {
+            background: rgba(72, 149, 239, 0.1);
+            border-color: var(--secondary-color);
+        }
+
+        .upload-area i {
+            font-size: 3rem;
+            color: var(--accent-color);
+            margin-bottom: 15px;
+        }
+
+        .upload-area h3 {
+            font-size: 1.3rem;
+            margin-bottom: 10px;
+            color: var(--secondary-color);
+        }
+
+        .upload-area p {
+            color: var(--gray-color);
+            margin-bottom: 20px;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 12px 30px;
+            background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
+            color: white;
+            border: none;
+            border-radius: 50px;
+            font-size: 1.1rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            box-shadow: 0 4px 15px rgba(67, 97, 238, 0.3);
+            font-weight: 500;
+        }
+
+        .btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 25px rgba(67, 97, 238, 0.4);
+            color: white;
+        }
+
+        .btn:disabled {
+            background: var(--gray-color);
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .btn-secondary {
+            background: linear-gradient(135deg, #6c757d 0%, #495057 100%);
+        }
+
+        .file-list {
+            margin-top: 20px;
+        }
+
+        .file-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 15px;
+            background: var(--light-color);
+            border-radius: 8px;
+            margin-bottom: 10px;
+            border-left: 4px solid var(--accent-color);
+        }
+
+        .file-name {
+            font-weight: 500;
+        }
+
+        .file-size {
+            color: var(--gray-color);
+            font-size: 0.9rem;
+        }
+
+        .progress-container {
+            margin: 30px 0;
+            display: none;
+        }
+
+        .progress-bar {
+            height: 10px;
+            background: #e9ecef;
+            border-radius: 5px;
+            overflow: hidden;
+            margin-bottom: 10px;
+        }
+
+        .progress {
+            height: 100%;
+            background: linear-gradient(135deg, var(--success-color) 0%, var(--accent-color) 100%);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        .progress-text {
+            text-align: center;
+            color: var(--gray-color);
+            font-size: 0.9rem;
+        }
+
+        .alert {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .alert-success {
+            background: rgba(76, 201, 240, 0.1);
+            border-left: 4px solid var(--success-color);
+            color: var(--success-color);
+        }
+
+        .alert-danger {
+            background: rgba(247, 37, 133, 0.1);
+            border-left: 4px solid var(--danger-color);
+            color: var(--danger-color);
+        }
+
+        .requirements {
+            background: rgba(255, 193, 7, 0.1);
+            border-left: 4px solid #ffc107;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .requirements h4 {
+            color: #856404;
+            margin-bottom: 10px;
+            font-weight: 500;
+        }
+
+        .requirements ul {
+            padding-left: 20px;
+        }
+
+        .requirements li {
+            margin-bottom: 5px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 30px;
+            display: none;
+        }
+
+        .spinner {
+            width: 60px;
+            height: 60px;
+            border: 6px solid rgba(72, 149, 239, 0.2);
+            border-top: 6px solid var(--accent-color);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .footer {
+            text-align: center;
+            padding: 20px;
+            color: var(--gray-color);
+            font-size: 0.9rem;
+        }
+
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 2rem;
+            }
+
+            .header p {
+                font-size: 1rem;
+            }
+
+            .card {
+                padding: 20px;
+            }
+
+            .upload-area {
+                padding: 20px;
+            }
+
+            .btn {
+                width: 100%;
+                padding: 15px;
+            }
+        }
+    </style>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1><i class="fas fa-cloud-showers-heavy"></i> 雷达图像预测系统</h1>
+            <p>上传同一区域的五帧雷达网格，查看接下来的五帧回波外推结果</p>
+        </div>
+
+        <div class="card">
+            <div class="card-title">
+                <i class="fas fa-info-circle"></i> 文件要求
+            </div>
+            <div class="requirements">
+                <h4>请确保上传的文件符合以下要求：</h4>
+                <ul>
+                    <li>上传连续的雷达图像数据文件 (.npy格式)</li>
+                    <li>需要上传 <strong>5个</strong> 连续的雷达图像文件</li>
+                    <li>文件将按文件名顺序进行处理</li>
+                    <li>文件大小建议不超过10MB</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">
+                <i class="fas fa-cloud-upload-alt"></i> 上传雷达图像
+            </div>
+
+            <div id="uploadArea" class="upload-area">
+                <i class="fas fa-file-upload"></i>
+                <h3>点击或拖拽文件到此处上传</h3>
+                <p>支持.npy格式的雷达图像文件</p>
+                <input type="file" id="fileInput" class="d-none" multiple accept=".npy">
+                <label for="fileInput" class="btn">
+                    <i class="fas fa-folder-open"></i> 选择文件
+                </label>
+            </div>
+
+            <div id="fileList" class="file-list"></div>
+
+            <div id="alertSuccess" class="alert alert-success">
+                <i class="fas fa-check-circle"></i> <span id="successMessage"></span>
+            </div>
+
+            <div id="alertError" class="alert alert-danger">
+                <i class="fas fa-exclamation-circle"></i> <span id="errorMessage"></span>
+            </div>
+
+            <div class="progress-container" id="progressContainer">
+                <div class="progress-bar">
+                    <div class="progress" id="progress"></div>
+                </div>
+                <div class="progress-text" id="progressText">正在上传文件...</div>
+            </div>
+
+            <div class="text-center">
+                <button id="predictBtn" class="btn" disabled>
+                    <i class="fas fa-rocket"></i> 开始预测
+                </button>
+            </div>
+
+            <div class="loading" id="loadingIndicator">
+                <div class="spinner"></div>
+                <p>系统正在处理您的雷达图像数据，请稍候...</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="footer">
+        <p>© 2023 雷达图像预测系统 | 基于深度学习的气象预测平台</p>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const fileInput = document.getElementById('fileInput');
+            const uploadArea = document.getElementById('uploadArea');
+            const fileList = document.getElementById('fileList');
+            const predictBtn = document.getElementById('predictBtn');
+            const loadingIndicator = document.getElementById('loadingIndicator');
+            const alertSuccess = document.getElementById('alertSuccess');
+            const alertError = document.getElementById('alertError');
+            const successMessage = document.getElementById('successMessage');
+            const errorMessage = document.getElementById('errorMessage');
+            const progressContainer = document.getElementById('progressContainer');
+            const progress = document.getElementById('progress');
+            const progressText = document.getElementById('progressText');
+
+            const REQUIRED_FILES = 5; // 需要5个文件
+
+            let selectedFiles = [];
+
+            // 处理文件选择
+            fileInput.addEventListener('change', function(event) {
+                selectedFiles = Array.from(event.target.files);
+                updateFileList();
+            });
+
+            // 拖拽功能
+            uploadArea.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                this.style.borderColor = '#3f37c9';
+                this.style.background = 'rgba(72, 149, 239, 0.2)';
+            });
+
+            uploadArea.addEventListener('dragleave', function(e) {
+                e.preventDefault();
+                this.style.borderColor = '#4895ef';
+                this.style.background = 'rgba(72, 149, 239, 0.05)';
+            });
+
+            uploadArea.addEventListener('drop', function(e) {
+                e.preventDefault();
+                this.style.borderColor = '#4895ef';
+                this.style.background = 'rgba(72, 149, 239, 0.05)';
+
+                if (e.dataTransfer.files.length > 0) {
+                    selectedFiles = Array.from(e.dataTransfer.files);
+                    fileInput.files = e.dataTransfer.files;
+                    updateFileList();
+                }
+            });
+
+            // 点击上传区域
+            uploadArea.addEventListener('click', function() {
+                fileInput.click();
+            });
+
+            // 更新文件列表显示
+            function updateFileList() {
+                fileList.innerHTML = '';
+
+                if (selectedFiles.length > 0) {
+                    selectedFiles.forEach((file, index) => {
+                        const fileItem = document.createElement('div');
+                        fileItem.className = 'file-item';
+                        fileItem.innerHTML = `
+                            <div class="file-name"></div>
+                            <div class="file-size">${formatFileSize(file.size)}</div>
+                        `;
+                        fileItem.querySelector(".file-name").textContent = (index + 1) + ". " + file.name;
+                        fileList.appendChild(fileItem);
+                    });
+
+                    // 检查文件数量
+                    if (selectedFiles.length === REQUIRED_FILES) {
+                        predictBtn.disabled = false;
+                        hideAlert(alertError);
+                    } else {
+                        predictBtn.disabled = true;
+                        showError(`请选择 ${REQUIRED_FILES} 个文件，当前选择了 ${selectedFiles.length} 个`);
+                    }
+                } else {
+                    predictBtn.disabled = true;
+                }
+            }
+
+            // 预测按钮点击事件
+            predictBtn.addEventListener('click', async function() {
+                if (selectedFiles.length !== REQUIRED_FILES) {
+                    showError(`请选择 ${REQUIRED_FILES} 个文件`);
+                    return;
+                }
+
+                // 重置状态
+                hideMessages();
+                loadingIndicator.style.display = 'block';
+                progressContainer.style.display = 'block';
+                predictBtn.disabled = true;
+
+                const formData = new FormData();
+                selectedFiles.forEach(file => {
+                    formData.append('npy_files', file);
+                });
+
+                try {
+                    // 模拟进度条
+                    simulateProgress();
+
+                    const response = await fetch('/predict', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    const data = await response.json();
+
+                    if (!response.ok) {
+                        throw new Error(data.error || '预测失败');
+                    }
+
+                    // 显示成功消息
+                    showSuccess('预测完成！正在跳转到结果页面...');
+
+                    // 跳转到结果页面
+                    setTimeout(() => {
+                        window.location.href = `/result/${data.session_id}`;
+                    }, 1500);
+
+                } catch (error) {
+                    showError('预测失败: ' + error.message);
+                    console.error('Error:', error);
+                } finally {
+                    loadingIndicator.style.display = 'none';
+                    progressContainer.style.display = 'none';
+                    predictBtn.disabled = false;
+                    progress.style.width = '0%';
+                }
+            });
+
+            // 辅助函数
+            function showError(message) {
+                errorMessage.textContent = message;
+                alertError.style.display = 'block';
+                alertSuccess.style.display = 'none';
+            }
+
+            function showSuccess(message) {
+                successMessage.textContent = message;
+                alertSuccess.style.display = 'block';
+                alertError.style.display = 'none';
+            }
+
+            function hideAlert(alertElement) {
+                alertElement.style.display = 'none';
+            }
+
+            function hideMessages() {
+                alertError.style.display = 'none';
+                alertSuccess.style.display = 'none';
+            }
+
+            function formatFileSize(bytes) {
+                if (bytes === 0) return '0 Bytes';
+                const k = 1024;
+                const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+                const i = Math.floor(Math.log(bytes) / Math.log(k));
+                return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+            }
+
+            function simulateProgress() {
+                let width = 0;
+                const interval = setInterval(() => {
+                    if (width >= 90) {
+                        clearInterval(interval);
+                        return;
+                    }
+                    width += Math.random() * 10;
+                    progress.style.width = Math.min(width, 90) + '%';
+                    progressText.textContent = `正在处理... ${Math.floor(width)}%`;
+                }, 200);
+            }
+        });
+    </script>
+</body>
+</html>

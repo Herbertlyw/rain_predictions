@@ -14,10 +14,6 @@ public class PrecipitationApplication {
 
     public static void main(String[] args) {
         SpringApplication.run(PrecipitationApplication.class, args);
-        System.out.println("===========================================");
-        System.out.println("降水预测平台启动成功！");
-        System.out.println("访问地址: http://localhost:8080/api");
-        System.out.println("===========================================");
     }
 }
 

@@ -10,17 +10,13 @@ import math
 import logging
 import matplotlib.pyplot as plt
 from tqdm import tqdm
-import glob
 import scipy.ndimage as ndimage
 import random
 import time
-from torch.cuda.amp import GradScaler, autocast
+from torch.amp import GradScaler, autocast
 import warnings
 import torch.backends.cudnn as cudnn
 from torch.utils.data import Subset
-from torch.profiler import profile, record_function, ProfilerActivity
-import os
-os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 # 忽略特定警告
 warnings.filterwarnings("ignore", category=UserWarning, module="torch.nn.functional")
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -47,10 +43,6 @@ def apply_stability_measures(tensor, name=""):
         
         # 2. 如果仍有问题，使用0替换
         tensor = torch.nan_to_num(tensor, nan=0.0, posinf=1.0, neginf=0.0)
-    
-    # 3. 添加微小噪声防止梯度消失
-    noise = torch.randn_like(tensor) * 1e-6
-    tensor = tensor + noise
     
     # 4. 限制数值范围
     tensor = torch.clamp(tensor, -50.0, 50.0)
@@ -237,7 +229,8 @@ class PredRNNv2_Model(nn.Module):
         # [batch, length, height, width, channel] -> [batch, length, channel, height, width]
         device = frames_tensor.device
         frames = frames_tensor.permute(0, 1, 4, 2, 3).contiguous()
-        mask_true = mask_true.permute(0, 1, 4, 2, 3).contiguous()
+        if return_loss:
+            mask_true = mask_true.permute(0, 1, 4, 2, 3).contiguous()
 
         batch = frames.shape[0]
         height = frames.shape[3]
@@ -263,9 +256,11 @@ class PredRNNv2_Model(nn.Module):
             [batch, self.num_hidden[0], height, width], device=device)
 
         # 使用自动混合精度
-        with autocast(enabled=self.use_amp):
+        with autocast("cuda", enabled=self.use_amp):
             for t in range(self.configs.total_length - 1):
-                if self.configs.reverse_scheduled_sampling == 1:
+                if not return_loss:
+                    net = frames[:, t] if t < frames.shape[1] else x_gen
+                elif self.configs.reverse_scheduled_sampling == 1:
                     # reverse schedule sampling
                     if t == 0:
                         net = frames[:, t]
@@ -638,7 +633,7 @@ class NPYDataset(Dataset):
             sequence = sequence[:, ::-1, :]
         
         # 随机旋转 (0, 90, 180, 270度)
-        rot = random.choice([0, 1, 2, 3])
+        rot = random.choice([0, 1, 2, 3] if sequence.shape[1] == sequence.shape[2] else [0, 2])
         if rot > 0:
             sequence = np.rot90(sequence, k=rot, axes=(1, 2))
         
@@ -671,7 +666,7 @@ class Configs:
         self.decouple_beta = 0.05  # 降低去耦损失权重
         self.use_ssim_loss = True  # 使用SSIM损失
         self.ssim_weight = 0.1  # SSIM损失权重
-        self.use_amp = True  # 使用自动混合精度
+        self.use_amp = torch.cuda.is_available()  # 使用自动混合精度
         
         # 训练相关
         self.reverse_scheduled_sampling = 1
@@ -696,7 +691,7 @@ class Configs:
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # ==================== 训练函数 (优化版) ====================
-def train_model(resume_from=None):
+def train_model(data_path, epochs=50, fast_dev_run=False, resume_from=None):
     # 确保导入 torch
     import torch
     import torch.optim
@@ -710,9 +705,17 @@ def train_model(resume_from=None):
     torch.backends.cudnn.enabled = True
     
     # 创建数据集和数据加载器
-    data_path = r'D:\radar\time20210309\data2'
+    configs.epochs = epochs
+    configs.fast_dev_run = fast_dev_run
     train_dataset = NPYDataset(data_path, configs.total_length, configs.patch_size, augment=True)
     
+    if len(train_dataset) == 0:
+        raise ValueError(f"训练至少需要 {configs.total_length} 个按时间排列的 NPY 文件")
+    sample = np.load(os.path.join(data_path, train_dataset.files[0]), allow_pickle=False)
+    if sample.ndim != 2 or any(n % configs.patch_size for n in sample.shape):
+        raise ValueError("训练网格的高和宽都必须是 4 的倍数")
+    configs.in_shape[2:] = [n // configs.patch_size for n in sample.shape]
+
     # 使用部分数据集进行快速训练
     if configs.fast_dev_run:
         logger.info("快速开发模式：使用部分数据集")
@@ -720,9 +723,9 @@ def train_model(resume_from=None):
         train_dataset = Subset(train_dataset, range(subset_size))
     
     # 使用多进程数据加载器
-    num_workers = min(4, os.cpu_count() - 1) if os.cpu_count() > 1 else 0
+    num_workers = 0 if fast_dev_run else min(4, max(0, (os.cpu_count() or 1) - 1))
     train_loader = DataLoader(train_dataset, batch_size=configs.batch_size, shuffle=True, 
-                              num_workers=num_workers, pin_memory=True, persistent_workers=True)
+                              num_workers=num_workers, pin_memory=configs.use_amp, persistent_workers=num_workers > 0)
     
     # 创建模型
     model = PredRNNv2(configs).to(configs.device)
@@ -735,7 +738,7 @@ def train_model(resume_from=None):
         optimizer, mode='min', factor=0.5, patience=5)
     
     # 混合精度梯度缩放
-    scaler = GradScaler(enabled=configs.use_amp)
+    scaler = GradScaler("cuda", enabled=configs.use_amp)
     
     # 训练日志
     train_losses = []
@@ -743,55 +746,19 @@ def train_model(resume_from=None):
     best_loss = float('inf')
     
     # 如果提供了恢复点，加载模型和优化器状态
-    if resume_from and os.path.isfile(resume_from):
-        logger.info(f"从检查点恢复训练: {resume_from}")
-        try:
-            checkpoint = torch.load(resume_from, map_location=configs.device)
-            
-            # 部分加载模型权重（只加载匹配的层）
-            model_dict = model.state_dict()
-            pretrained_dict = {}
-            
-            # 1. 过滤掉不匹配的键
-            for k, v in checkpoint['model_state_dict'].items():
-                if k in model_dict and v.shape == model_dict[k].shape:
-                    pretrained_dict[k] = v
-                else:
-                    logger.warning(f"跳过权重 {k} (形状不匹配)")
-            
-            # 2. 更新模型字典
-            model_dict.update(pretrained_dict)
-            
-            # 3. 加载模型
-            model.load_state_dict(model_dict, strict=False)
-            
-            # 加载优化器状态
-            if 'optimizer_state_dict' in checkpoint:
-                optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-            
-            # 加载学习率调度器状态
-            if 'scheduler_state_dict' in checkpoint:
-                scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
-            
-            # 恢复训练状态
-            start_epoch = checkpoint.get('epoch', 0) + 1
-            train_losses = checkpoint.get('train_losses', [])
-            
-            # 加载混合精度缩放器状态
-            if 'scaler_state_dict' in checkpoint and checkpoint['scaler_state_dict'] is not None:
-                scaler.load_state_dict(checkpoint['scaler_state_dict'])
-            
-            logger.info(f"恢复训练: epoch {start_epoch}/{configs.epochs}")
-            logger.info(f"成功加载 {len(pretrained_dict)}/{len(checkpoint['model_state_dict'])} 个权重")
-        except Exception as e:
-            logger.error(f"加载检查点失败: {str(e)}")
-            logger.info("将从头开始训练")
-            start_epoch = 0
-    else:
-        if resume_from:
-            logger.warning(f"检查点文件不存在 {resume_from}, 将从头开始训练")
-        start_epoch = 0
-    
+    if resume_from:
+        checkpoint = torch.load(resume_from, map_location=configs.device, weights_only=True)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        if 'scheduler_state_dict' in checkpoint:
+            scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+        if checkpoint.get('scaler_state_dict'):
+            scaler.load_state_dict(checkpoint['scaler_state_dict'])
+        start_epoch = checkpoint['epoch'] + 1
+        train_losses = checkpoint.get('train_losses', [])
+        best_loss = min(train_losses, default=float('inf'))
+        logger.info(f"恢复训练: epoch {start_epoch}/{configs.epochs}")
+
     logger.info(f"开始训练，使用设备: {configs.device}")
     logger.info(f"数据集大小: {len(train_dataset)}")
     logger.info(f"批次大小: {configs.batch_size}")
@@ -832,7 +799,7 @@ def train_model(resume_from=None):
                                                  data.shape[0], configs)
             
             # 前向传播
-            with autocast(enabled=configs.use_amp):
+            with autocast("cuda", enabled=configs.use_amp):
                 next_frames, loss = model(data, mask_true)
             
             # 检查NaN损失
@@ -844,11 +811,13 @@ def train_model(resume_from=None):
             # 反向传播
             if loss is not None:
                 # 使用混合精度缩放损失
-                scaled_loss = scaler.scale(loss / accumulation_steps)
+                group_start = (batch_idx // accumulation_steps) * accumulation_steps
+                group_size = min(accumulation_steps, len(train_loader) - group_start)
+                scaled_loss = scaler.scale(loss / group_size)
                 scaled_loss.backward()
                 
                 # 每accumulation_steps步更新一次权重
-                if (batch_idx + 1) % accumulation_steps == 0:
+                if (batch_idx + 1) % accumulation_steps == 0 or batch_idx + 1 == len(train_loader):
                     # 梯度裁剪
                     scaler.unscale_(optimizer)
                     torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=configs.grad_clip)
@@ -858,11 +827,11 @@ def train_model(resume_from=None):
                     scaler.update()
                     optimizer.zero_grad()
                     
-                    total_loss += loss.item()
-                    num_batches += 1
+                total_loss += loss.item()
+                num_batches += 1
                     
                     # 更新进度条描述
-                    progress_bar.set_postfix(loss=loss.item())
+                progress_bar.set_postfix(loss=loss.item())
         
         if num_batches > 0:
             avg_loss = total_loss / num_batches
@@ -876,7 +845,7 @@ def train_model(resume_from=None):
             logger.info(f'Epoch {epoch+1} completed. Time: {epoch_time:.2f}s, Loss: {avg_loss:.6f}, LR: {current_lr:.7f}')
             logger.info(f'跳过批次: {skipped_batches}/{len(train_loader)}')
         else:
-            logger.warning(f'Epoch {epoch+1} completed. No valid batches processed.')
+            raise RuntimeError("该轮没有有效训练批次")
         
         # 每1个epoch保存一次模型
         checkpoint_path = f'checkpoints/predrnn_v2_epoch_{epoch+1}.pth'
@@ -965,28 +934,11 @@ def predict_sequences(input_files, model_path, output_dir='./predictions'):
     model = PredRNNv2(configs).to(configs.device)
     
     # 加载模型
-    checkpoint = torch.load(model_path, map_location=configs.device)
+    checkpoint = torch.load(model_path, map_location=configs.device, weights_only=True)
     
-    # 部分加载模型权重（只加载匹配的层）
-    model_dict = model.state_dict()
-    pretrained_dict = {}
-    
-    # 1. 过滤掉不匹配的键
-    for k, v in checkpoint['model_state_dict'].items():
-        if k in model_dict and v.shape == model_dict[k].shape:
-            pretrained_dict[k] = v
-        else:
-            logger.warning(f"跳过权重 {k} (形状不匹配)")
-    
-    # 2. 更新模型字典
-    model_dict.update(pretrained_dict)
-    
-    # 3. 加载模型
-    model.load_state_dict(model_dict, strict=False)
+    model.load_state_dict(checkpoint['model_state_dict'])
     model.eval()
-    
-    logger.info(f"成功加载 {len(pretrained_dict)}/{len(checkpoint['model_state_dict'])} 个权重")
-    
+
     # 读取输入数据
     input_sequence = []
     for file_path in input_files:
@@ -1022,17 +974,10 @@ def predict_sequences(input_files, model_path, output_dir='./predictions'):
     
     input_sequence = torch.FloatTensor(input_sequence).unsqueeze(0).to(configs.device)  # [1, seq_len, H//patch, W//patch, patch*patch*1]
     
-    # 创建mask (预测阶段使用全0 mask)
-    mask_shape = (1, configs.aft_seq_length - 1,
-                  125,  # 500//4
-                  125,  # 500//4
-                  configs.patch_size ** 2 * 1)
-    mask_true = torch.zeros(mask_shape).to(configs.device)
-    
-    # 预测
-    with torch.no_grad():
-        predictions, _ = model(input_sequence, mask_true, return_loss=False)
-    
+    with torch.inference_mode():
+        predictions, _ = model(input_sequence, None, return_loss=False)
+        predictions = predictions[:, -configs.aft_seq_length:]
+
     # 保存预测结果
     os.makedirs(output_dir, exist_ok=True)
     predictions = predictions.cpu().numpy()[0]  # [seq_len, H//patch, W//patch, patch*patch*1]
@@ -1072,7 +1017,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='PredRNNv2 for your 500x500 npy data')
     parser.add_argument('--mode', type=str, default='train', choices=['train', 'predict'],
                         help='运行模式: train 或 predict')
-    parser.add_argument('--data_path', type=str, default=r'D:\radar\time20210309\data2',
+    parser.add_argument('--data_path', type=str, default=None,
                         help='训练数据路径')
     parser.add_argument('--model_path', type=str, default='',
                         help='模型文件路径(用于预测)')
@@ -1085,25 +1030,13 @@ if __name__ == '__main__':
     parser.add_argument('--fast_dev_run', action='store_true',
                         help='快速开发模式（使用部分数据集）')
     
+    parser.add_argument('--epochs', type=int, default=50, help='目标总轮数（含已恢复轮数）')
     args = parser.parse_args()
     
     if args.mode == 'train':
-        # 确保数据目录存在
-        if not os.path.exists(args.data_path):
-            logger.error(f"数据目录不存在: {args.data_path}")
-            exit(1)
-        
-        # 如果没有指定恢复点，尝试查找最新的检查点
-        if not args.resume_from:
-            checkpoint_files = glob.glob('checkpoints/predrnn_v2_epoch_*.pth')
-            if checkpoint_files:
-                # 按epoch排序
-                checkpoint_files.sort(key=lambda x: int(x.split('_')[-1].split('.')[0]))
-                latest_checkpoint = checkpoint_files[-1]
-                logger.info(f"找到最新检查点: {latest_checkpoint}")
-                args.resume_from = latest_checkpoint
-        
-        train_model(resume_from=args.resume_from)
+        if not args.data_path or not os.path.isdir(args.data_path) or args.epochs < 1:
+            parser.error("训练需要有效的 --data_path 和正整数 --epochs")
+        train_model(args.data_path, args.epochs, args.fast_dev_run, args.resume_from)
     elif args.mode == 'predict':
         if not args.model_path or not args.input_files:
             logger.error("预测模式需要提供 --model_path 和 --input_files 参数")

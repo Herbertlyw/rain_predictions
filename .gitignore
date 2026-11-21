@@ -1,0 +1,16 @@
+.venv/
+venv/
+__pycache__/
+*.pyc
+target/
+.idea/
+.DS_Store
+app/predictions/
+app/precipitation-platform/ai-service/results/
+app/precipitation-platform/backend/uploads/
+app/precipitation-platform/backend/results/
+demo-frames/
+runs/
+results/
+checkpoints/
+logs/
